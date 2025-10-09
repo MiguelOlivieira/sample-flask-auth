@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from models.user import User
 from database import db
 from flask_login import LoginManager, login_user, current_user, logout_user, login_required
+import bcrypt
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = "your_secret_key"
@@ -27,7 +28,7 @@ def login():
         #login
         user = User.query.filter_by(username=username).first() #busca no banco e seleciona o primeiro que bate com o username
         
-        if (user) and user.password == password:
+        if (user) and bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
             login_user(user)
             print(login_user)
             print(current_user.is_authenticated)
@@ -49,7 +50,8 @@ def register():
     password = data.get("password")
     
     if username and password:
-        user = User(username=username, password=password)
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        user = User(username=username, password=hashed_password, role='user')
         db.session.add(user)
         db.session.commit()
         return jsonify({"message": "Usuário cadastrado com sucesso!"}), 200
@@ -66,11 +68,17 @@ def read_user(id_user):
     
     return jsonify({"message": "Usuário não encontrado"}), 404   
     
+    
+    
 @app.route("/user/<int:id_user>", methods=['PUT'])
 @login_required
-def update_user(id_user):
+def update_user(id_user):#123
     data = request.json
     user = User.query.get(id_user)
+     ##123 != 123 and "user" == "user"
+    if id_user != current_user.id and current_user.role == "user": #Somente admnistradores podem editar outros usuarios
+        return jsonify({"message": "Operação não permitida"}), 403
+    
     
     if user and data.get("password"): #obrigatorio existir um usuario e enviar a senha nova no corpo
         user.password = data.get("password") #envia a senha no body para o user
@@ -84,6 +92,9 @@ def update_user(id_user):
 @login_required
 def delete_user(id_user):
     user = User.query.get(id_user)
+    
+    if current_user.role != 'admin': #Apenas administradores podem fazer deleções
+        return jsonify({"message": "Operação não permitida"}), 403
     
     if id_user == current_user.id:   #não deve ser permitido deletar o usuario logado
       return jsonify({"message": "Deleção não permitida"}), 403
